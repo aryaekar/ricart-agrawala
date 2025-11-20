@@ -1,0 +1,57 @@
+========================================
+FIXED: Connection Timeout Issue
+========================================
+
+PROBLEM FIXED:
+- Node was taking 5 minutes to connect (RMI timeout)
+- Nodes couldn't reach each other
+
+SOLUTION:
+- Added 2-second connection timeout
+- Increased retries from 1 to 3 attempts
+- Better logging for debugging
+
+========================================
+TEST NOW:
+========================================
+
+Machine 1 (Registry Server):
+  ./start_registry_server.sh
+
+Machine 2 (Node 0):
+  ./start_node.sh 192.168.137.149 0
+
+Machine 3 (Node 1):
+  ./start_node.sh 192.168.137.149 1
+
+EXPECTED OUTPUT:
+  Connected to existing NodeRegistry service
+  Created and registered Node X on port 200X
+  Node X is accessible at xxx.xxx.xxx.xxx:200X
+  Node X connected to Y other node(s)    <-- Should show immediately
+  Waiting 3 seconds for other nodes...
+  [NodeX] Requesting critical section...
+
+========================================
+DEBUGGING:
+========================================
+
+If nodes still can't connect:
+
+1. Check firewall on BOTH machines:
+   sudo iptables -L | grep 1099
+   sudo iptables -L | grep 2000
+
+2. Test port connectivity:
+   nc -zv 192.168.137.149 1099
+   nc -zv 192.168.137.149 2000
+   nc -zv 192.168.137.149 2001
+
+3. Disable firewall temporarily:
+   sudo systemctl stop firewalld    # OR
+   sudo ufw disable
+
+4. Check if registry is listening:
+   sudo lsof -i :1099
+
+========================================

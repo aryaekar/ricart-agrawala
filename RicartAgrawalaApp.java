@@ -142,12 +142,18 @@ public class RicartAgrawalaApp {
             // Get list of registered nodes from custom registry
             List<Integer> registeredIds = nodeRegistry.getRegisteredNodeIds();
             
+            Logger.debug("Found " + registeredIds.size() + " registered nodes");
+            
             for (Integer otherId : registeredIds) {
                 if (otherId != nodeId) {
-                    Node otherNode = connectToNodeWithRetry(otherId, 1);
+                    // Quick check - don't block if node is unreachable
+                    Node otherNode = connectToNodeWithRetry(otherId, 3);  // Increased to 3 retries with shorter timeout
                     if (otherNode != null) {
                         otherNodes.add(otherNode);
                         connectedCount++;
+                        Logger.debug("Successfully connected to Node " + otherId);
+                    } else {
+                        Logger.debug("Could not connect to Node " + otherId + " (may not be reachable yet)");
                     }
                 }
             }
@@ -157,13 +163,11 @@ public class RicartAgrawalaApp {
         
         node.updateOtherNodes(otherNodes);
         
-        // Only log when connection count changes
-        if (connectedCount > 0) {
-            Logger.debug("Node " + nodeId + " now has " + connectedCount + " connections");
-        }
+        // Always log connection status
+        Logger.info("Node " + nodeId + " connected to " + connectedCount + " other node(s)");
     }
     
-    // Connect to a specific node with retry mechanism
+    // Connect to a specific node with retry mechanism (with timeout)
     private Node connectToNodeWithRetry(int targetNodeId, int maxRetries) {
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -171,19 +175,33 @@ public class RicartAgrawalaApp {
                 Node node = nodeRegistry.getNode(targetNodeId);
                 
                 if (node != null) {
-                    // Test the connection by calling a method
-                    node.getNodeId();
-                    return node;
+                    // Test the connection with timeout using a separate thread
+                    final Node finalNode = node;
+                    java.util.concurrent.FutureTask<Integer> future = new java.util.concurrent.FutureTask<>(() -> finalNode.getNodeId());
+                    Thread testThread = new Thread(future);
+                    testThread.setDaemon(true);
+                    testThread.start();
+                    
+                    try {
+                        // Wait max 2 seconds for connection test
+                        future.get(2, java.util.concurrent.TimeUnit.SECONDS);
+                        return node;  // Connection successful
+                    } catch (java.util.concurrent.TimeoutException te) {
+                        Logger.debug("Timeout connecting to Node " + targetNodeId + " (attempt " + attempt + "/" + maxRetries + ")");
+                        testThread.interrupt();
+                    }
                 }
             } catch (Exception e) {
-                // Logger.debug("Attempt " + attempt + " to connect to Node " + targetNodeId + " failed: " + e.getMessage());
-                if (attempt < maxRetries) {
-                    try {
-                        Thread.sleep(1000); // Wait 1 second before retry
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
+                Logger.debug("Attempt " + attempt + " to connect to Node " + targetNodeId + " failed: " + e.getMessage());
+            }
+            
+            // Wait before retry
+            if (attempt < maxRetries) {
+                try {
+                    Thread.sleep(500); // Wait 500ms before retry
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
                 }
             }
         }
