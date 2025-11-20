@@ -9,23 +9,42 @@ public class RicartAgrawalaApp {
     
     private List<NodeImpl> nodes;
     private Registry registry;
+    private NodeRegistry nodeRegistry;
+    private boolean isRegistryServer = false;
     
     public RicartAgrawalaApp() {
         this.nodes = new ArrayList<>();
     }
     
-    // Initialize or connect to RMI registry
+    // Initialize or connect to RMI registry with custom NodeRegistry
     private void initializeRegistry() throws Exception {
         try {
             registry = LocateRegistry.getRegistry(Config.RMI_REGISTRY_HOST, Config.RMI_REGISTRY_PORT);
             registry.list();
             Logger.info("Connected to existing RMI registry at " + Config.RMI_REGISTRY_HOST + ":" + Config.RMI_REGISTRY_PORT);
+            
+            // Try to get the custom NodeRegistry
+            try {
+                nodeRegistry = (NodeRegistry) registry.lookup("NodeRegistry");
+                Logger.info("Connected to existing NodeRegistry service");
+            } catch (Exception e) {
+                Logger.error("NodeRegistry service not found. Please start the registry server first with: ./start_registry.sh");
+                throw new Exception("NodeRegistry service not found. Start registry server first.");
+            }
+        } catch (java.rmi.NotBoundException e) {
+            throw e; // Re-throw if NodeRegistry not found
         } catch (Exception e) {
             Logger.info("Could not connect to existing RMI registry at " + Config.RMI_REGISTRY_HOST + ":" + Config.RMI_REGISTRY_PORT);
-            Logger.info("Creating new RMI registry...");
+            Logger.info("Creating new RMI registry with NodeRegistry service...");
             try {
                 registry = LocateRegistry.createRegistry(Config.RMI_REGISTRY_PORT);
                 Logger.info("RMI registry created on port " + Config.RMI_REGISTRY_PORT);
+                
+                // Create and register the custom NodeRegistry service
+                nodeRegistry = new NodeRegistryImpl();
+                registry.rebind("NodeRegistry", nodeRegistry);
+                isRegistryServer = true;
+                Logger.info("NodeRegistry service created and registered");
             } catch (java.rmi.server.ExportException ex) {
                 if (ex.getMessage() != null && ex.getMessage().contains("Port already in use")) {
                     Logger.error("Port " + Config.RMI_REGISTRY_PORT + " is already in use. " +
@@ -91,12 +110,13 @@ public class RicartAgrawalaApp {
         
         int port = Config.BASE_NODE_PORT + nodeId;
         try {
-            UnicastRemoteObject.exportObject(node, port);
+            // Export the node locally
+            Node stub = (Node) UnicastRemoteObject.exportObject(node, port);
             
-            String nodeName = "Node" + nodeId;
-            registry.rebind(nodeName, node);
+            // Register with custom NodeRegistry instead of direct registry.rebind
+            nodeRegistry.registerNode(nodeId, stub);
             
-            Logger.info("Created and registered " + nodeName + " on port " + port);
+            Logger.info("Created and registered Node " + nodeId + " on port " + port);
         } catch (Exception e) {
             Logger.error("Failed to export node " + nodeId + ": " + e.getMessage());
             throw e;
@@ -114,14 +134,21 @@ public class RicartAgrawalaApp {
         List<Node> otherNodes = new ArrayList<>();
         int connectedCount = 0;
         
-        for (int i = 0; i < 10; i++) {
-            if (i != nodeId) {
-                Node otherNode = connectToNodeWithRetry(i, 1); // Only try once to avoid delays
-                if (otherNode != null) {
-                    otherNodes.add(otherNode);
-                    connectedCount++;
+        try {
+            // Get list of registered nodes from custom registry
+            List<Integer> registeredIds = nodeRegistry.getRegisteredNodeIds();
+            
+            for (Integer otherId : registeredIds) {
+                if (otherId != nodeId) {
+                    Node otherNode = connectToNodeWithRetry(otherId, 1);
+                    if (otherNode != null) {
+                        otherNodes.add(otherNode);
+                        connectedCount++;
+                    }
                 }
             }
+        } catch (Exception e) {
+            Logger.debug("Error getting registered nodes: " + e.getMessage());
         }
         
         node.updateOtherNodes(otherNodes);
@@ -136,13 +163,14 @@ public class RicartAgrawalaApp {
     private Node connectToNodeWithRetry(int targetNodeId, int maxRetries) {
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                String nodeName = "Node" + targetNodeId;
-                Node node = (Node) registry.lookup(nodeName);
+                // Get node from custom registry
+                Node node = nodeRegistry.getNode(targetNodeId);
                 
-                // Test the connection by calling a method
-                node.getNodeId();
-                
-                return node;
+                if (node != null) {
+                    // Test the connection by calling a method
+                    node.getNodeId();
+                    return node;
+                }
             } catch (Exception e) {
                 // Logger.debug("Attempt " + attempt + " to connect to Node " + targetNodeId + " failed: " + e.getMessage());
                 if (attempt < maxRetries) {
@@ -201,20 +229,34 @@ public class RicartAgrawalaApp {
             // Wait for threads to stop
             Thread.sleep(1000);
             
-            for (int i = 0; i < nodes.size(); i++) {
+            // Unregister nodes from custom registry
+            for (NodeImpl node : nodes) {
                 try {
-                    String nodeName = "Node" + i;
-                    registry.unbind(nodeName);
+                    int nodeId = node.getNodeId();
+                    if (nodeRegistry != null) {
+                        nodeRegistry.unregisterNode(nodeId);
+                    }
                 } catch (Exception e) {
-                    Logger.debug("Failed to unbind " + "Node" + i + ": " + e.getMessage());
+                    Logger.debug("Failed to unregister node: " + e.getMessage());
                 }
             }
             
+            // Unexport node objects
             for (NodeImpl node : nodes) {
                 try {
                     UnicastRemoteObject.unexportObject(node, true);
                 } catch (Exception e) {
                     Logger.debug("Failed to unexport node: " + e.getMessage());
+                }
+            }
+            
+            // If this is the registry server, clean up the registry service
+            if (isRegistryServer && nodeRegistry != null) {
+                try {
+                    UnicastRemoteObject.unexportObject(nodeRegistry, true);
+                    registry.unbind("NodeRegistry");
+                } catch (Exception e) {
+                    Logger.debug("Failed to unexport NodeRegistry: " + e.getMessage());
                 }
             }
             
@@ -247,10 +289,27 @@ public class RicartAgrawalaApp {
         try {
             Logger.info("=== Ricart-Agrawala Distributed Mutual Exclusion Algorithm ===");
             
-            // Check if running in multi-machine mode
+            // Check mode: registry, multi, or single-machine
+            boolean registryMode = args.length > 0 && "registry".equals(args[0]);
             boolean multiMachineMode = args.length > 0 && "multi".equals(args[0]);
             
-            if (multiMachineMode) {
+            if (registryMode) {
+                // Registry server mode: just maintain the registry
+                Logger.info("Running in registry server mode");
+                app.initializeRegistry();
+                
+                if (!app.isRegistryServer) {
+                    Logger.error("Registry already exists. Only one registry server should run.");
+                    return;
+                }
+                
+                Logger.info("Registry server is running...");
+                Logger.info("Nodes can connect to this registry");
+                Logger.info("Press Enter to stop the server:");
+                
+                scanner.nextLine();
+                
+            } else if (multiMachineMode) {
                 // Multi-machine mode: run single node
                 Logger.info("Running in multi-machine mode (single node per process)");
                 
