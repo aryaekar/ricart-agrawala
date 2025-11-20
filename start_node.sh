@@ -48,4 +48,4 @@ echo ""
 java -Djava.rmi.server.hostname=$HOST_IP \
      -Dregistry.host=$REGISTRY_IP \
      -Dregistry.port=1099 \
-     RicartAgrawalaApp multi
+     RicartAgrawalaApp multi $NODE_ID

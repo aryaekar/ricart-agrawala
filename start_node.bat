@@ -37,4 +37,4 @@ if not exist RicartAgrawalaApp.class (
 echo Starting Ricart-Agrawala Node in multi-machine mode...
 echo.
 
-java -Djava.rmi.server.hostname=%HOST_IP% -Dregistry.host=%REGISTRY_IP% -Dregistry.port=1099 RicartAgrawalaApp multi
+java -Djava.rmi.server.hostname=%HOST_IP% -Dregistry.host=%REGISTRY_IP% -Dregistry.port=1099 RicartAgrawalaApp multi %NODE_ID%

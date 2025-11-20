@@ -253,8 +253,21 @@ public class RicartAgrawalaApp {
             if (multiMachineMode) {
                 // Multi-machine mode: run single node
                 Logger.info("Running in multi-machine mode (single node per process)");
-                System.out.print("Enter node ID (0-9): ");
-                int nodeId = scanner.nextInt();
+                
+                int nodeId;
+                if (args.length > 1) {
+                    try {
+                        nodeId = Integer.parseInt(args[1]);
+                        Logger.info("Node ID provided via arguments: " + nodeId);
+                    } catch (NumberFormatException e) {
+                        Logger.error("Invalid Node ID argument. Prompting for input...");
+                        System.out.print("Enter node ID (0-9): ");
+                        nodeId = scanner.nextInt();
+                    }
+                } else {
+                    System.out.print("Enter node ID (0-9): ");
+                    nodeId = scanner.nextInt();
+                }
                 
                 if (nodeId < 0 || nodeId > 9) {
                     Logger.error("Node ID must be between 0 and 9");
