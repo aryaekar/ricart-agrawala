@@ -1,0 +1,5 @@
+grant {
+    // Allow all permissions for local development and testing
+    // For production, restrict these permissions appropriately
+    permission java.security.AllPermission;
+};

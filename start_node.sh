@@ -44,8 +44,21 @@ fi
 
 echo "Starting Ricart-Agrawala Node in multi-machine mode..."
 echo ""
+echo "Testing connection to registry at $REGISTRY_IP:1099..."
+if command -v nc &> /dev/null; then
+    if nc -z -w 2 $REGISTRY_IP 1099 2>/dev/null; then
+        echo "✓ Registry is reachable"
+    else
+        echo "✗ Cannot reach registry at $REGISTRY_IP:1099"
+        echo "  Make sure registry server is running on the other machine"
+        exit 1
+    fi
+fi
 
+echo ""
 java -Djava.rmi.server.hostname=$HOST_IP \
      -Dregistry.host=$REGISTRY_IP \
      -Dregistry.port=1099 \
-     RicartAgrawalaApp multi $NODE_ID
+     -Djava.rmi.server.useCodebaseOnly=false \
+     -Djava.security.policy=file:./security.policy \
+     RicartAgrawalaApp multi $NODE_ID 2>&1

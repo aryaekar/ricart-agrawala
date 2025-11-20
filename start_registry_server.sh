@@ -30,13 +30,28 @@ if [ $? -ne 0 ]; then
 fi
 
 echo ""
+echo "Checking firewall..."
+if ! sudo iptables -L INPUT -n | grep -E "1099|2000:2009" > /dev/null 2>&1; then
+    echo "⚠ Firewall may not be configured. Run: sudo ./setup_firewall.sh"
+else
+    echo "✓ Firewall configured"
+fi
+
+echo ""
 echo "Starting registry server with NodeRegistry service..."
 echo ""
 echo "Other machines can connect using:"
 echo "  ./start_node.sh $LOCAL_IP <node_id>"
 echo ""
+echo "Test connectivity from other machine:"
+echo "  nc -zv $LOCAL_IP 1099"
+echo ""
 echo "Press Ctrl+C to stop the server"
 echo "========================================="
 echo ""
 
-java -Djava.rmi.server.hostname=$LOCAL_IP RicartAgrawalaApp registry
+# Use explicit hostname and allow remote connections
+java -Djava.rmi.server.hostname=$LOCAL_IP \
+     -Djava.rmi.server.useCodebaseOnly=false \
+     -Djava.security.policy=file:./security.policy \
+     RicartAgrawalaApp registry 2>&1

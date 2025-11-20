@@ -110,13 +110,17 @@ public class RicartAgrawalaApp {
         
         int port = Config.BASE_NODE_PORT + nodeId;
         try {
-            // Export the node locally
+            // Set RMI socket factory to use fixed port range
+            System.setProperty("java.rmi.server.hostname", System.getProperty("java.rmi.server.hostname", Config.LOCAL_HOST));
+            
+            // Export the node locally with explicit port
             Node stub = (Node) UnicastRemoteObject.exportObject(node, port);
             
             // Register with custom NodeRegistry instead of direct registry.rebind
             nodeRegistry.registerNode(nodeId, stub);
             
             Logger.info("Created and registered Node " + nodeId + " on port " + port);
+            Logger.info("Node " + nodeId + " is accessible at " + System.getProperty("java.rmi.server.hostname") + ":" + port);
         } catch (Exception e) {
             Logger.error("Failed to export node " + nodeId + ": " + e.getMessage());
             throw e;
