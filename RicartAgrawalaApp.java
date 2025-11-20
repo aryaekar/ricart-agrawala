@@ -224,7 +224,18 @@ public class RicartAgrawalaApp {
         }
     }
     
+    private static void configureRmiHostname() {
+        String existingHost = System.getProperty("java.rmi.server.hostname");
+        if (existingHost == null || existingHost.isBlank()) {
+            System.setProperty("java.rmi.server.hostname", Config.LOCAL_HOST);
+            Logger.info("java.rmi.server.hostname not provided. Using detected address: " + Config.LOCAL_HOST);
+        } else {
+            Logger.info("Using configured java.rmi.server.hostname: " + existingHost);
+        }
+    }
+    
     public static void main(String[] args) {
+        configureRmiHostname();
         RicartAgrawalaApp app = new RicartAgrawalaApp();
         Scanner scanner = new Scanner(System.in);
         

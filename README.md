@@ -63,6 +63,7 @@ In network mode, each process runs **one node**, and all nodes connect to a **si
 **Notes:**
 - Replace `<MACHINE1_IP>` with the actual IP address of Machine 1 (the one running `start_registry.sh`), e.g. `192.168.137.37`.
 - Each machine must use a **unique node ID** (0–9). The ID you type at the prompt must match the second argument to `start_node.sh`.
+- The application now auto-detects each machine's outward-facing IP. If detection fails, override it explicitly with `-Dlocal.host=<THIS_MACHINE_IP>` (this also sets `java.rmi.server.hostname`).
 
 ### Simulating Multi-Machine on Same Machine
 
